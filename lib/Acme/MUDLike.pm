@@ -6,53 +6,65 @@ use warnings;
 
 use Continuity;
 use Carp;
+use Devel::Pointer;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
-=for comment
-
-Todo:
-
-* messages still in duplicate when the same player logs in twice; make room's tell_object operate uniquely.
-
-* need a black list black list, so we can re-add ourself to things that get serialized by Acme::State even though we're in %INC
-
-* need an error log viewabe by all.
-
-* eval and its output should be sent to the whole room.
-
-* Better account management.
-
-* There's code around to parse LPC and convert it to Perl.  It would be neat to offer a full blown 2.4.5
-  lib for people to play around in.
-
-* Acme::IRCLike would probably be more popular -- bolt an IRC server onto your app.
-
-* Also, a telnet interface beyond just an HTTP interface would be nice.  Should be easy to do.
-
-* Let "players" wander between apps.  Offer RPC to support this.
-
-* Optionally take an existing Continuity instance with path_session set and optionally parameters
-  for the paths to use for chat pull and commands.
-  Not sure how to work this; each path gets its own coroutine, but there is still only one main().
-  Continuity doesn't have a registry of which paths go to which callbacks.
-
-Done:
-
-* messages in triplicate because each player has three routines and is inserted into the floor three times.  oops.
-
-* build the ajax.chat.js into source. -- okay, test.
-
-* eval, call
-
-* inventory's insert() method should set the insertee's environment to itself.  that way, all objects have an environment.
-
-* Commands need to do $floor->tell_object or $self->tell_object rather than output directly.
-
-* Put @messages into the room ($floor).  Get the chat action out of the main loop.  Dispatch all
-  actions.  Maybe.
-
-=cut
+# Todo:
+# 
+# *  what would be *really* cool is doing on the fly image generation to draw an overhead map of the program based on a 
+#    graph of which objects reference which other objects and let people go walk around inside of their program
+#    and then they could fight methods and use global variables as weapons!
+# 
+# * /goto should put you inside an arbitrary object, /look should list as exits and/or items the object references contained by that object
+#   in other words, break away from our rigid API for inventory/room/etc.
+# 
+# * need a black list black list, so we can re-add ourself to things that get serialized by Acme::State even though we're in %INC
+# 
+# * need an error log viewabe by all.
+# 
+# * eval and its output should be sent to the whole room.
+# 
+# * Better account management.
+# 
+# * There's code around to parse LPC and convert it to Perl.  It would be neat to offer a full blown 2.4.5
+#   lib for people to play around in.
+# 
+# * Acme::IRCLike would probably be more popular -- bolt an IRC server onto your app.
+# 
+# * Also, a telnet interface beyond just an HTTP interface would be nice.  Should be easy to do.
+# 
+# * Let "players" wander between apps.  Offer RPC to support this.
+# 
+# * Optionally take an existing Continuity instance with path_session set and optionally parameters
+#   for the paths to use for chat pull and commands.
+#   Not sure how to work this; each path gets its own coroutine, but there is still only one main().
+#   Continuity doesn't have a registry of which paths go to which callbacks.
+# 
+# Done:
+# 
+# * mark/call commands should have a current object register, so you can do /call thingie whatever /next and then be calling 
+#   into the object returned by thingie->whatever
+# 
+# * /list (like look, but with stringified object references)
+# 
+# * /mark <n>  ... or... /mark <stringified obj ref>
+# 
+# * messages still in duplicate when the same player logs in twice; make room's tell_object operate uniquely.
+# 
+# * messages in triplicate because each player has three routines and is inserted into the floor three times.  oops.
+# 
+# * build the ajax.chat.js into source. -- okay, test.
+# 
+# * eval, call
+# 
+# * inventory's insert() method should set the insertee's environment to itself.  that way, all objects have an environment.
+# 
+# * Commands need to do $floor->tell_object or $self->tell_object rather than output directly.
+# 
+# * Put @messages into the room ($floor).  Get the chat action out of the main loop.  Dispatch all
+#   actions.  Maybe.
+# 
 
 our $password; # Acme::State friendly
 our $floor;    # holds all other objects
@@ -73,9 +85,9 @@ sub new {
     $password ||= join('', map { $_->[int rand scalar @$_] } (['a'..'z', 'A'..'Z', '0'..'9']) x 8),
 
     my $staticp = sub { 
-        warn "staticp: url->path: ``@{[ $_[0]->url->path ]}''"; 
+        # warn "staticp: url->path: ``@{[ $_[0]->url->path ]}''"; 
         return 0 if $_[0]->url->path =~  m/\.js$/; 
-        warn "staticp: dynamic js handling override not engaged";
+        # warn "staticp: dynamic js handling override not engaged";
         return $_[0]->url->path =~ m/\.(jpg|jpeg|gif|png|css|ico|js)$/ 
     };
 
@@ -141,9 +153,9 @@ sub login {
     #
 
     while(1) {
-        my $nick_tmp = $request->param('nick') or next;
-        my $admin_tmp = $request->param('admin') or next;
-        if($nick_tmp =~ m/^[a-z]{2,20}$/i and $admin_tmp eq $password) {
+        my $nick_tmp = $request->param('nick');
+        my $admin_tmp = $request->param('admin');
+        if(defined($nick_tmp) and defined($admin_tmp) and $nick_tmp =~ m/^[a-z]{2,20}$/i and $admin_tmp eq $password) {
             my $nick = $nick_tmp;
             $player = $players->named($nick) || $players->insert(Acme::MUDLike::player->new(name => $nick), );
             $player->request = $request;
@@ -151,6 +163,7 @@ sub login {
             $player->command($request); # doesn't return
         }
         # warn "trying login again XXX";
+        $nick_tmp ||= ''; $admin_tmp ||= '';
         $nick_tmp =~ s/[^a-z]//gi; $admin_tmp =~ s/[^a-z0-9]//gi;
         $request->print(
             header, # $msg, 
@@ -286,6 +299,7 @@ sub xy { $_[0]->{x}, $_[0]->{y} }
 sub get { 0; } # can't be picked up
 sub inventory { $_[0]->{inventory} }
 sub evalcode :lvalue { $_[0]->{evalcode } }
+sub current_item :lvalue { $_[0]->{current_item} }
 
 sub tell_object {
     my $self = shift;
@@ -404,7 +418,7 @@ warn "parse_command: msg: ``$msg''";
         (my $cmd) = shift(@args) =~ m{/(\w+)};
         # XXX I'd like to see template matching, like V N A N, then preact/act/postact
         if( $self->can("_$cmd") ) {
-            eval { $self->can("_$cmd")->($self, @args); 1; } or $self->tell_object("Error in command: ``$@''<br>.\n");
+            eval { $self->can("_$cmd")->($self, @args); 1; } or $self->tell_object("Error in command: ``$@''.");
         } else {
             $self->tell_object("No such command:  $cmd.");
         }
@@ -412,6 +426,30 @@ warn "parse_command: msg: ``$msg''";
         $floor->tell_object($self->name . ': ' . $msg); # XXX should be $self->environment->tell_object
         # $request->print("Got it!\n");
     }
+}
+
+sub item_by_arg {
+    my $self = shift;
+    my $item = shift;
+    my $ob;
+    return $self->current_item if $item eq 'current';
+    if($item =~ m/^\d+$/) {
+        my @stuff = $self->environment->contents;
+        $ob = $stuff[$item] if $item < @stuff;
+    }
+    $ob or $ob = $self->inventory->named($item);      # thing in our inventory with that name
+    $ob or $ob = $self->environment->named($item);     # thing in our environment with that name
+    $ob or $ob = $item if exists &{$item.'::new'}; # raw package name
+    $ob or do {
+      # Foo::Bar=HASH(0x812ea54)
+      my $hex;
+      ($hex) = $item =~ m{^[a-z][a-z_:]+\((0x[0-9a-z]+)\)}i;
+      $hex or ($hex) = $item =~ m{^0x([0-9a-z]+)}i;
+      if($hex) {
+          $ob = Devel::Pointer::deref(hex($hex));
+      }
+    };
+    return $ob;
 }
 
 # actions
@@ -423,18 +461,41 @@ sub _call {
     my $item = shift;
     my $func = shift;
     my @args = @_; # XXX for each arg, go through the item finding code below, except keep identify if not found
-    my $ob = $self->inventory->named($item);     # thing in our inventory with that name
-    $ob or $ob = $self->environment->named($item);     # thing in our environment with that name
-    # XXX some Devel::Pointer deref magic here could be fun... given stringifications, we have to parse the hex first though
-    $ob or $ob = $item if exists &{$item.'::new'}; # raw package name
-    $ob or do {
-        $self->tell_object("call:  no ``$item'' here");
+    my $ob = $self->item_by_arg($item) or do {
+        $self->tell_object("call: no item by that name/number/package name here");
+        return;
     };
+    for my $i (0..$#args) {
+        my $x = $self->item_by_arg($args[$i]);
+        $args[$i] = $x if $x;
+    }
     $ob->can($func) or do {
         $self->tell_object("call:  item ``$item'' has no ``$func'' method");
+        return;
     };
     $self->tell_object(join '', "Call: ", eval { $ob->can($func)->($ob, @args); } || "Error: ``$@''.");
     1;
+}
+
+sub _list {
+    my $self = shift;
+    my $i = 0;
+    $self->tell_object(join '', 
+        "Here, you see:\n", 
+        map qq{$_\n}, 
+        map { $i . ': ' . $_ }
+        $self->environment->contents, $self->inventory->contents,
+    ); 
+}
+
+sub _mark {
+    my $self = shift;
+    my $item = shift;
+    my $ob = $self->item_by_arg($item) or do {
+        $self->tell_object("mark: no item by that name/number/package name here");
+        return;
+    };
+    $self->current_item = $ob;
 }
 
 sub _eval {
@@ -457,7 +518,12 @@ sub _look {
     my $self = shift;
     my @args = @_;
     # $self->tell_object(join '', "Here, you see:\n", map qq{$_\n}, map $_->name, $floor->contents); 
-    $self->tell_object(join '', "Here, you see:\n", map qq{$_\n}, map $_->name, $self->environment->contents); 
+    $self->tell_object(join '', 
+        "Here, you see:\n", 
+        map qq{$_\n}, 
+        map { $_->can('name') ? $_->name : ref($_) }
+        $self->environment->contents
+    ); 
 }
 
 sub _inv {
@@ -473,7 +539,12 @@ sub _i {
 sub _inventory {
     my $self = shift;
     my @args = @_;
-    $self->tell_object(join '', "You are holding:\n", map qq{$_\n}, map $_->name, $self->inventory->contents); 
+    $self->tell_object(join '', 
+        "You are holding:\n", 
+        map qq{$_\n}, 
+        map { $_->can('name') ? $_->name : ''.$_ } 
+        $self->inventory->contents
+    ); 
 }
 
 sub _take {
@@ -575,6 +646,8 @@ Connect to the URL provided and cut and paste into the text box:
     /i
     /call sword name
     wee, fun!  oh, hai everyone!
+    /eval no strict "refs"; join '', map "$_\n", keys %{"main::"};
+    /call Acme::MUDLike::player=HASH(0x8985e10) name
 
 =head1 DESCRIPTION
 
@@ -594,15 +667,33 @@ Paste the URL into your browser.
 Chat with other users logged into the app.
 Messages beginning with a slash, C</>, are interpreted as commands:
 
+=over 2
+
 =item C<< /look >> 
 
 See who else and what else is in the room.
+
+=item C<< /mark >>
+
+  /mark 1
+
+  /mark torch
+
+  /mark foo::bar
+
+  /mark 0x812ea54
+
+Select an object as the logical current object by name, package name, number (as a position in your
+inventory list, which is useful for when you've cloned an object that does not define an C<id> or C<name> function),
+or by memory address (as in C<< Foo::Bar=HASH(0x812ea54) >>).
 
 =item C<< /call >> 
 
 Call a function in an object; eg, if you're holding a C<toaster>, you can write:
 
   /call toaster add_bread 1
+
+The special name "current" refers to the current object, as marked with mark.
 
 =item C<< /eval >>
 
@@ -651,6 +742,8 @@ Transfers an object to another player.
 =item C<< /dest >>
 
 Destroys an object instance.
+
+=back
 
 =head2 new()
 

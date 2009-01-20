@@ -1,14 +1,15 @@
 --- #YAML:1.0
 name:               Acme-MUDLike
-version:            0.01
+version:            0.02
 abstract:           Hang out inside of your application
 author:
-    - Scott Walters <knoppix@lightandslowass.net>
+    - Scott Walters <scott@slowass.net>
 license:            unknown
 distribution_type:  module
 configure_requires:
     ExtUtils::MakeMaker:  0
-requires:  {}
+requires:
+    Devel::Pointer:  0
 no_index:
     directory:
         - t
