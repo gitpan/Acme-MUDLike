@@ -2,4 +2,5 @@ Makefile.PL
 MANIFEST
 t/Acme-MUDLike.t
 lib/Acme/MUDLike.pm
-META.yml                                 Module meta-data (added by MakeMaker)
+META.yml                                 Module YAML meta-data (added by MakeMaker)
+META.json                                Module JSON meta-data (added by MakeMaker)

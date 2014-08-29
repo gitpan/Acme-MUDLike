@@ -8,13 +8,16 @@ use Continuity;
 use Carp;
 use Devel::Pointer;
 
-our $VERSION = '0.02';
+our $VERSION = '0.04';
 
 # Todo:
 # 
 # *  what would be *really* cool is doing on the fly image generation to draw an overhead map of the program based on a 
 #    graph of which objects reference which other objects and let people go walk around inside of their program
 #    and then they could fight methods and use global variables as weapons!
+#
+# * http://zvtm.sourceforge.net/zgrviewer.html or something similar for showing the user the "map" of
+#   nodes/rooms/whatever made of has-a references or something.
 # 
 # * /goto should put you inside an arbitrary object, /look should list as exits and/or items the object references contained by that object
 #   in other words, break away from our rigid API for inventory/room/etc.
